@@ -1,83 +1,175 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>وصلة — تطبيق تعليمي موسيقي</title>
-  <link rel="manifest" href="manifest.webmanifest">
-  <meta name="theme-color" content="#0f172a">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>وصلة – تطبيق تعليمي موسيقي</title>
+
+  <!-- PWA -->
+  <link rel="manifest" href="manifest.webmanifest" />
+  <meta name="theme-color" content="#0f172a" />
+
+  <!-- الواجهة البسيطة -->
   <style>
-    body {
-      font-family: "Tajawal", sans-serif;
-      background-color: #0f172a;
-      color: white;
-      text-align: center;
-      margin: 0;
-      padding: 0;
+    :root{--bg:#0f172a;--fg:#e2e8f0;--brand:#22d3ee;}
+    *{box-sizing:border-box}
+    body{
+      margin:0;background:var(--bg);color:var(--fg);
+      font-family: system-ui, -apple-system, "Segoe UI", Tajawal, Arial, sans-serif;
+      text-align:center
     }
-    header {
-      padding: 1rem;
-      background: #f59e0b;
-      color: #0f172a;
-      font-size: 1.5rem;
-      font-weight: bold;
+    header{padding:20px 12px;border-bottom:1px solid #1f2937}
+    h1{margin:0;font-size:22px}
+    .bar{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin:14px 0}
+    button{
+      background:#111827;color:#e5e7eb;border:1px solid #374151;
+      padding:10px 14px;border-radius:10px;cursor:pointer
     }
-    .buttons {
-      display: flex;
-      flex-wrap: wrap;
-      justify-content: center;
-      gap: 1rem;
-      padding: 2rem;
-    }
-    button {
-      background: #22d3ee;
-      color: #0f172a;
-      border: none;
-      padding: 1rem 2rem;
-      font-size: 1.2rem;
-      border-radius: 1rem;
-      cursor: pointer;
-      transition: background 0.3s;
-    }
-    button:hover {
-      background: #f59e0b;
-      color: white;
-    }
+    button.active{outline:2px solid var(--brand)}
+    main{max-width:900px;margin:12px auto;padding:12px}
+    #stage{position:relative;display:inline-block}
+    #video{display:none}
+    #canvas{width: min(92vw, 860px); height: auto; background:#0b1220;border-radius:12px}
+    .hint{color:#9ca3af;font-size:13px;margin-top:8px}
   </style>
 </head>
 <body>
-  <header>🎶 تطبيق وصلة التعليمي الموسيقي 🎶</header>
-  <p>اضغط على الأزرار لسماع الأصوات الموسيقية</p>
-  <div class="buttons">
-    <button onclick="playSound('C4')">دو</button>
-    <button onclick="playSound('D4')">ري</button>
-    <button onclick="playSound('E4')">مي</button>
-    <button onclick="playSound('F4')">فا</button>
-    <button onclick="playSound('G4')">صول</button>
-    <button onclick="playSound('A4')">لا</button>
-    <button onclick="playSound('B4')">سي</button>
-  </div>
+  <header>
+    <h1>🎶 وصلة – قراءة حركة الأصابع للعزف</h1>
+    <div class="bar">
+      <button id="mode-piano" class="active">بيانو</button>
+      <button id="mode-drum">طبل</button>
+      <button id="start">تشغيل الكاميرا 📷</button>
+      <button id="install" hidden>تثبيت التطبيق ⬇️</button>
+    </div>
+  </header>
+
+  <main>
+    <div id="stage">
+      <video id="video" playsinline></video>
+      <canvas id="canvas"></canvas>
+    </div>
+    <div class="hint">للعزف: قرّبي أصابعك من أسفل الإطار على الشاشة في وضع «بيانو»، أو المس الدوائر في وضع «طبل»</div>
+  </main>
+
+  <!-- Tone.js للصوت -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.39/Tone.min.js" defer></script>
+
+  <!-- MediaPipe Tasks (Hands) -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/vision_bundle.js" defer></script>
 
   <script>
-    const sounds = {
-      C4: new Audio('https://actions.google.com/sounds/v1/cartoon/clang_and_wobble.ogg'),
-      D4: new Audio('https://actions.google.com/sounds/v1/cartoon/wood_plank_flicks.ogg'),
-      E4: new Audio('https://actions.google.com/sounds/v1/cartoon/boing.ogg'),
-      F4: new Audio('https://actions.google.com/sounds/v1/cartoon/slide_whistle_to_drum_hit.ogg'),
-      G4: new Audio('https://actions.google.com/sounds/v1/cartoon/concussive_hit_guitar_boing.ogg'),
-      A4: new Audio('https://actions.google.com/sounds/v1/cartoon/hollow_pop.ogg'),
-      B4: new Audio('https://actions.google.com/sounds/v1/cartoon/clown_horn.ogg')
-    };
+  // ===== الإعداد العام =====
+  const btnStart   = document.getElementById("start");
+  const btnPiano   = document.getElementById("mode-piano");
+  const btnDrum    = document.getElementById("mode-drum");
+  const btnInstall = document.getElementById("install");
+  const video  = document.getElementById("video");
+  const canvas = document.getElementById("canvas");
+  const ctx    = canvas.getContext("2d");
+  let currentMode = "piano";   // "piano" | "drum"
+  let landmarker, running = false;
 
-    function playSound(note) {
-      sounds[note].currentTime = 0;
-      sounds[note].play();
-    }
+  // ===== إعداد الصوت (Tone.js) =====
+  const piano = new Tone.Sampler({
+    urls: { "C4": "C4.mp3", "E4": "E4.mp3", "G4": "G4.mp3", "C5": "C5.mp3" }
+  }).toDestination();
+  const drum = new Tone.MembraneSynth().toDestination();
 
-    // Service Worker لتفعيل التثبيت
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('service-worker.js');
+  // إن لم تكن لديك عينات بيانو بعد، سنستعمل بديل بسيط:
+  piano.add = ()=>{}; // placeholder فقط لتفادي الأخطاء إن لم توجد عينات صوت
+  // يمكنك لاحقًا رفع أصواتك الحقيقية في مجلد assets وتعديل الروابط هنا.
+
+  function playPianoByY(y){
+    // y بين 0..canvas.height – كلما نزلت يدك للأسفل تُعزف نغمة
+    const zone = Math.floor((y / canvas.height) * 4); // 4 مناطق
+    const notes = ["C4","E4","G4","C5"];
+    const note = notes[Math.max(0, Math.min(3, zone))];
+    try { Tone.start(); piano.triggerAttackRelease(note, "8n"); } catch {}
+  }
+  function playDrumHit(){
+    try { Tone.start(); drum.triggerAttackRelease("C2", "8n"); } catch {}
+  }
+
+  // ===== مفاتيح الواجهة =====
+  btnPiano.onclick = ()=>{ currentMode="piano"; btnPiano.classList.add("active"); btnDrum.classList.remove("active"); }
+  btnDrum.onclick  = ()=>{ currentMode="drum";  btnDrum.classList.add("active");  btnPiano.classList.remove("active"); }
+  window.addEventListener("beforeinstallprompt", (e)=>{ e.preventDefault(); btnInstall.hidden=false; btnInstall.onclick=()=>e.prompt(); });
+
+  // ===== تشغيل الكاميرا وبداية MediaPipe Hands =====
+  btnStart.onclick = async () => {
+    if (running) return;
+    running = true;
+    // فيديو
+    const stream = await navigator.mediaDevices.getUserMedia({video:true, audio:false});
+    video.srcObject = stream;
+    await video.play();
+
+    // مقاس اللوحة
+    canvas.width  = video.videoWidth;
+    canvas.height = video.videoHeight;
+
+    // تحميل نموذج MediaPipe Hands
+    const { HandLandmarker, FilesetResolver, DrawingUtils } = window;
+    const vision = await FilesetResolver.forVisionTasks(
+      "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm"
+    );
+    landmarker = await HandLandmarker.createFromOptions(vision, {
+      baseOptions: {
+        modelAssetPath:
+          "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task"
+      },
+      numHands: 2,
+      runningMode: "VIDEO"
+    });
+
+    const draw = new DrawingUtils(ctx);
+    let lastTime = 0;
+
+    async function render(t){
+      const now = performance.now();
+      if (!lastTime) lastTime = now;
+      const results = landmarker.detectForVideo(video, now);
+
+      // رسم الفيديو كخلفية
+      ctx.save();
+      ctx.scale(-1,1); // مرآة
+      ctx.drawImage(video, -canvas.width, 0, canvas.width, canvas.height);
+      ctx.restore();
+
+      // رسم العظام والنقاط
+      if (results?.landmarks) {
+        for (const lm of results.landmarks) {
+          draw.drawConnectors(lm, HandLandmarker.HAND_CONNECTIONS, {color:"#22d3ee", lineWidth:3});
+          draw.drawLandmarks(lm, {color:"#f472b6", radius:3});
+
+          // نقطة الإبهام (4) كمثال
+          const tip = lm[8]; // رأس السبابة
+          const x = (1 - tip.x) * canvas.width;
+          const y = tip.y * canvas.height;
+
+          // مناطق التفعيل
+          if (currentMode === "piano" && y > canvas.height * 0.75) {
+            playPianoByY(y);
+          } else if (currentMode === "drum" && y > canvas.height * 0.7) {
+            playDrumHit();
+          }
+
+          // مؤشر بصري
+          ctx.beginPath(); ctx.arc(x, y, 10, 0, Math.PI*2);
+          ctx.strokeStyle = currentMode==="piano" ? "#22d3ee" : "#f59e0b";
+          ctx.lineWidth = 2; ctx.stroke();
+        }
+      }
+      requestAnimationFrame(render);
     }
+    requestAnimationFrame(render);
+  };
+
+  // ===== تسجيل الـ Service Worker للتثبيت والاوفلاين =====
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.register("./service-worker.js").catch(()=>{});
+  }
   </script>
 </body>
 </html>
