@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>وصلة — تطبيق تعليمي موسيقي</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <meta name="theme-color" content="#0f172a">
+  <style>
+    body {
+      font-family: "Tajawal", sans-serif;
+      background-color: #0f172a;
+      color: white;
+      text-align: center;
+      margin: 0;
+      padding: 0;
+    }
+    header {
+      padding: 1rem;
+      background: #f59e0b;
+      color: #0f172a;
+      font-size: 1.5rem;
+      font-weight: bold;
+    }
+    .buttons {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 1rem;
+      padding: 2rem;
+    }
+    button {
+      background: #22d3ee;
+      color: #0f172a;
+      border: none;
+      padding: 1rem 2rem;
+      font-size: 1.2rem;
+      border-radius: 1rem;
+      cursor: pointer;
+      transition: background 0.3s;
+    }
+    button:hover {
+      background: #f59e0b;
+      color: white;
+    }
+  </style>
+</head>
+<body>
+  <header>🎶 تطبيق وصلة التعليمي الموسيقي 🎶</header>
+  <p>اضغط على الأزرار لسماع الأصوات الموسيقية</p>
+  <div class="buttons">
+    <button onclick="playSound('C4')">دو</button>
+    <button onclick="playSound('D4')">ري</button>
+    <button onclick="playSound('E4')">مي</button>
+    <button onclick="playSound('F4')">فا</button>
+    <button onclick="playSound('G4')">صول</button>
+    <button onclick="playSound('A4')">لا</button>
+    <button onclick="playSound('B4')">سي</button>
+  </div>
+
+  <script>
+    const sounds = {
+      C4: new Audio('https://actions.google.com/sounds/v1/cartoon/clang_and_wobble.ogg'),
+      D4: new Audio('https://actions.google.com/sounds/v1/cartoon/wood_plank_flicks.ogg'),
+      E4: new Audio('https://actions.google.com/sounds/v1/cartoon/boing.ogg'),
+      F4: new Audio('https://actions.google.com/sounds/v1/cartoon/slide_whistle_to_drum_hit.ogg'),
+      G4: new Audio('https://actions.google.com/sounds/v1/cartoon/concussive_hit_guitar_boing.ogg'),
+      A4: new Audio('https://actions.google.com/sounds/v1/cartoon/hollow_pop.ogg'),
+      B4: new Audio('https://actions.google.com/sounds/v1/cartoon/clown_horn.ogg')
+    };
+
+    function playSound(note) {
+      sounds[note].currentTime = 0;
+      sounds[note].play();
+    }
+
+    // Service Worker لتفعيل التثبيت
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('service-worker.js');
+    }
+  </script>
+</body>
+</html>
