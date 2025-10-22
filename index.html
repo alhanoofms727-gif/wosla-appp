@@ -1,245 +1,150 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-  <meta charset="UTF-8" />
+  <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>وصلة – قراءة حركة الأصابع للعزف</title>
-
-  <!-- PWA -->
-  <link rel="manifest" href="manifest.webmanifest" />
-  <meta name="theme-color" content="#0f172a" />
+  <meta name="theme-color" content="#0f172a">
 
   <style>
-    :root{--bg:#0f172a;--panel:#0b1220;--fg:#e2e8f0;--muted:#94a3b8;--brand:#22d3ee;}
+    :root{
+      --bg:#0f172a;           /* كحلي غامق */
+      --panel:#0b1220;
+      --brand:#22d3ee;        /* سماوي */
+      --brand2:#38bdf8;
+      --accent:#f59e0b;       /* برتقالي */
+      --text:#e5e7eb;         /* رمادي فاتح */
+    }
     *{box-sizing:border-box}
+    html,body{height:100%}
     body{
-      margin:0;background:var(--bg);color:var(--fg);
-      font-family: system-ui, -apple-system, "Segoe UI", Tajawal, Arial, sans-serif;
+      margin:0;background:var(--bg);color:var(--text);
+      font-family:system-ui,-apple-system,Segoe UI,Roboto,"Tajawal",sans-serif;
+      display:flex;flex-direction:column;min-height:100dvh;
     }
-    header{padding:18px 12px;border-bottom:1px solid #1f2937;text-align:center}
-    h1{margin:0;font-size:22px}
-    .bar{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin:14px 0}
+    header{
+      padding:16px 12px;text-align:center;font-weight:700;font-size:20px;
+    }
+    .controls{
+      position:relative; z-index:10;
+      display:flex;gap:10px;flex-wrap:wrap;justify-content:center;
+      padding:10px 12px;
+    }
     button{
-      background:#111827;color:#e5e7eb;border:1px solid #374151;
-      padding:10px 14px;border-radius:10px;cursor:pointer
+      appearance:none;border:0; cursor:pointer;
+      padding:10px 14px;border-radius:10px;
+      background:#162032; color:var(--text); font-weight:700;
+      outline:2px solid transparent; transition:.15s;
     }
-    button.active{outline:2px solid var(--brand)}
-    main{max-width:980px;margin:20px auto;padding:0 12px}
-    #stage{
-      position:relative;background:var(--panel);border-radius:14px;
-      min-height:320px; display:flex;align-items:center;justify-content:center;
-      overflow:hidden;
+    button:hover{transform:translateY(-1px)}
+    button.active,button:focus{outline-color:var(--brand)}
+    .primary{background:var(--brand); color:#03121a}
+    .ghost{background:#162032}
+    .status{ text-align:center; padding:6px 10px; min-height:24px; opacity:.9 }
+    .status.error{color:#ffb4b4}
+    .stage{
+      position:relative; flex:1; display:flex; justify-content:center; align-items:center;
+      padding:10px 12px 18px;
     }
-    #video{display:none}
-    #canvas{width:100%;height:auto;display:block}
-    .hint{color:var(--muted);font-size:13px;margin-top:10px;text-align:center}
-    .status{color:#f59e0b;font-size:13px;margin-top:8px;text-align:center}
-    .error{color:#f87171}
+    /* مهم: نمنع الـcanvas/الفيديو من سرقة الضغطات فوق الأزرار */
+    video,canvas{max-width:min(960px, 95vw); width:100%; height:auto; border-radius:12px}
+    video,canvas{ display:block; background:#0b1220; }
+    canvas{ position:absolute; inset:auto; pointer-events:none; }
+    .frame{ position:relative; }
+    footer{padding:8px 12px; text-align:center; opacity:.7; font-size:13px}
   </style>
-</head>
 
-<body>
-  <header>
-    <h1>🎶 وصلة – قراءة حركة الأصابع للعزف</h1>
-    <div class="bar">
-      <button id="mode-piano" class="active">بيانو</button>
-      <button id="mode-drum">طبل</button>
-      <button id="start">تشغيل الكاميرا 📷</button>
-      <button id="stop"  style="display:none;">إيقاف الكاميرا ✋</button>
-      <button id="install" hidden>تثبيت التطبيق ⬇️</button>
-    </div>
-  </header>
-
-  <main>
-    <div id="stage">
-      <!-- نُخفي الفيديو ونرسمه على اللوحة (canvas). إن لم يعمل الرسم سيظهر الفيديو كبديل -->
-      <video id="video" playsinline></video>
-      <canvas id="canvas"></canvas>
-    </div>
-    <div class="hint">اضغطي «تشغيل الكاميرا» ثم وافقي على الإذن. إن لم يظهر الإذن ادخلي إلى إعدادات المتصفح ← أذونات الموقع ← الكاميرا ← سماح.</div>
-    <div id="status" class="status"></div>
-  </main>
-
-  <!-- ============ سكربت التطبيق ============ -->
-  <script>
-    // عناصر الواجهة
-    const btnStart  = document.getElementById('start');
-    const btnStop   = document.getElementById('stop');
-    const btnPiano  = document.getElementById('mode-piano');
-    const btnDrum   = document.getElementById('mode-drum');
-    const btnInstall= document.getElementById('install');
-    const video     = document.getElementById('video');
-    const canvas    = document.getElementById('canvas');
-    const ctx       = canvas.getContext('2d');
-    const statusEl  = document.getElementById('status');
-
-    let currentMode = 'piano';
-    let stream = null;
-    let animId = null;
-
-    // رسائل حالة مبسطة
-    function setStatus(msg, isError=false){
-      statusEl.textContent = msg || '';
-      statusEl.className = 'status' + (isError ? ' error' : '');
-    }
-
-    // تشغيل الكاميرا بعد «نقرة» المستخدم (مهم لأذونات المتصفح)
-    async function startCamera(){
-      try {
-        setStatus('جاري طلب إذن الكاميرا…');
-        const constraints = {
-          audio: false,
-          video: {
-            facingMode: 'user',    // الأمامية. غيريها إلى 'environment' للخلفية
-            width:  { ideal: 640 },
-            height: { ideal: 480 }
-          }
-        };
-        stream = await navigator.mediaDevices.getUserMedia(constraints);
-        video.srcObject = stream;
-        await video.play();
-
-        btnStart.style.display = 'none';
-        btnStop.style.display  = 'inline-block';
-        setStatus('الكاميرا تعمل ✅');
-
-        // تجهيز القياسات والرسم على اللوحة
-        canvas.width  = video.videoWidth  || 640;
-        canvas.height = video.videoHeight || 480;
-        drawFrame();
-      } catch (err) {
-        console.error('كاميرا:', err);
-        setStatus('تعذر تشغيل الكاميرا. تأكدي من السماح بها من إعدادات المتصفح والجهاز.', true);
-        // في حال رفض الإذن، نُظهر الفيديو ليظهر أي خطأ للمستخدم
-        video.style.display = 'block';
-      }
-    }
-
-    function stopCamera(){
-      if (animId) cancelAnimationFrame(animId);
-      if (stream){
-        stream.getTracks().forEach(t => t.stop());
-        stream = null;
-      }
-      btnStop.style.display  = 'none';
-      btnStart.style.display = 'inline-block';
-      setStatus('تم إيقاف الكاميرا');
-      // مسح اللوحة
-      ctx.clearRect(0,0,canvas.width,canvas.height);
-    }
-
-    // رسم إطار الفيديو على الـ canvas كمرآة
-    function drawFrame(){
-      try{
-        ctx.save();
-        ctx.scale(-1,1); // مرآة
-        ctx.drawImage(video, -canvas.width, 0, canvas.width, canvas.height);
-        ctx.restore();
-      }catch(e){ /* تجاهل الإطار عند عدم الجاهزية */ }
-      animId = requestAnimationFrame(drawFrame);
-    }
-
-    // ربط الأزرار
-    btnStart.addEventListener('click', startCamera);
-    btnStop .addEventListener('click',  stopCamera);
-    btnPiano.addEventListener('click', () => {
-      currentMode = 'piano';
-      btnPiano.classList.add('active'); btnDrum.classList.remove('active');
-    });
-    btnDrum.addEventListener('click', () => {
-      currentMode = 'drum';
-      btnDrum.classList.add('active');  btnPiano.classList.remove('active');
-    });
-
-    // زر تثبيت PWA إن كان مدعومًا
-    window.addEventListener('beforeinstallprompt', (e) => {
-      e.preventDefault(); btnInstall.hidden = false;
-      btnInstall.onclick = () => e.prompt();
-    });
-
-    // تشخيص سريع لبيئة الأذونات
-    (async () => {
-      if (!('mediaDevices' in navigator) || !('getUserMedia' in navigator.mediaDevices)){
-        setStatus('متصفحك لا يدعم getUserMedia. جرّبي تحديث المتصفح أو استخدام Chrome/Edge.', true);
-      } else if (location.protocol !== 'https:' && location.hostname !== 'localhost') {
-        setStatus('يجب أن يكون الرابط HTTPS لتعمل الكاميرا.', true);
-      } else {
-        setStatus('جاهز. اضغطي «تشغيل الكاميرا».');
-      }
-    })();
-
-    // تسجيل Service Worker (للتثبيت والاوفلاين) — اختياري
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('./service-worker.js').catch(()=>{});
-    }
-  ...
+  <!-- مكتبات MediaPipe الرسمية -->
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
+</head>
+<body>
+  <header>وصلة 🎵 – قراءة حركة الأصابع للعزف</header>
 
-  <!-- كود استشعار الأصابع + الصوت -->
+  <div class="controls" id="controls">
+    <button id="btnStart" class="primary">تشغيل الكاميرا 📷</button>
+    <button id="btnStop"  class="ghost" style="display:none">إيقاف الكاميرا ⏹️</button>
+    <button id="btnPiano" class="ghost active">🎹 بيانو</button>
+    <button id="btnDrum"  class="ghost">🥁 طبل</button>
+  </div>
+
+  <div class="status" id="status">جاهز. اضغطي «تشغيل الكاميرا» ثم اسمحي بالإذن.</div>
+
+  <div class="stage">
+    <div class="frame">
+      <!-- playsinline/muted لتسمح بعض المتصفحات بعرض الفيديو فورًا -->
+      <video id="video" playsinline muted></video>
+      <canvas id="canvas"></canvas>
+    </div>
+  </div>
+
+  <footer>جُهِّز للعرض التعليمي — يعمل على الجوال والكمبيوتر</footer>
+
   <script>
-    // ⚡ الصقي هنا الكود الذي أعطيتك إياه بالكامل
-  </script>
-</body>
-</html>
-/* ==================== استشعار الأصابع + الصوت ==================== */
+/* ===================== عناصر DOM ===================== */
+const btnStart  = document.getElementById('btnStart');
+const btnStop   = document.getElementById('btnStop');
+const btnPiano  = document.getElementById('btnPiano');
+const btnDrum   = document.getElementById('btnDrum');
+const statusEl  = document.getElementById('status');
+const video     = document.getElementById('video');
+const canvas    = document.getElementById('canvas');
+const ctx       = canvas.getContext('2d');
 
-// عناصر تحكم الوضع
-let noteMode = 'piano'; // 'piano' أو 'drum'
-btnPiano.addEventListener('click', () => noteMode='piano');
-btnDrum .addEventListener('click', () => noteMode='drum');
+let noteMode = 'piano';          // 'piano' أو 'drum'
+let mpCamera = null;
+let lastTipY = null, lastHitTime = 0;
+const HIT_COOLDOWN = 120;        // ms
+const SPEED_THRESHOLD = 8;       // سرعة نزول الإصبع لاعتبارها "ضربة"
 
-// ---------- Web Audio (صوت قوي) ----------
+/* ===================== صوت (Web Audio) ===================== */
 const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 const master = audioCtx.createGain();
-// ⚠️ صوت قوي — عدّليه من 1.0 إذا رغبتِ
-master.gain.value = 1.0; 
+master.gain.value = 1.0; // 🔊 قوي — خفّضيها لو رغبتِ
 master.connect(audioCtx.destination);
 
-// ملاحظات (دو ري مي فا صول لا سي دو)
-const FREQS = [261.63, 293.66, 329.63, 349.23, 392.00, 440.00, 493.88, 523.25];
+// درجات بسيطة C4..C5 (8 مفاتيح)
+const FREQS = [261.63,293.66,329.63,349.23,392.00,440.00,493.88,523.25];
 
-// تشغيل نغمة بيانو مبسطة (موجة نصف ساين مع مغلف سريع)
 function playPiano(index){
-  const f = FREQS[Math.max(0, Math.min(FREQS.length-1, index))];
+  const i = Math.max(0, Math.min(FREQS.length-1, index));
+  const f = FREQS[i];
   const osc  = audioCtx.createOscillator();
-  const gain = audioCtx.createGain();
+  const g    = audioCtx.createGain();
   osc.type = 'sine';
   osc.frequency.value = f;
-  gain.gain.setValueAtTime(0, audioCtx.currentTime);
-  gain.gain.linearRampToValueAtTime(0.95, audioCtx.currentTime + 0.005); // هجوم سريع
-  gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.35); // ذيل سريع
-  osc.connect(gain).connect(master);
-  osc.start();
-  osc.stop(audioCtx.currentTime + 0.37);
+  g.gain.setValueAtTime(0, audioCtx.currentTime);
+  g.gain.linearRampToValueAtTime(0.95, audioCtx.currentTime + 0.005);
+  g.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.35);
+  osc.connect(g).connect(master);
+  osc.start(); osc.stop(audioCtx.currentTime + 0.37);
 }
 
-// طبلة (ضربة ضوضاء + فلتر)
 function playDrum(){
   const dur = 0.15;
-  const bufferSize = audioCtx.sampleRate * dur;
-  const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+  const n = audioCtx.sampleRate * dur;
+  const buffer = audioCtx.createBuffer(1, n, audioCtx.sampleRate);
   const data = buffer.getChannelData(0);
-  // ضوضاء بيضاء
-  for (let i=0;i<bufferSize;i++){ data[i] = (Math.random()*2-1) * (1 - i/bufferSize); }
-  const src = audioCtx.createBufferSource();
-  src.buffer = buffer;
-
-  const filter = audioCtx.createBiquadFilter();
-  filter.type = 'lowpass';
-  filter.frequency.value = 1200;
-
-  const gain = audioCtx.createGain();
-  gain.gain.value = 1.2; // قوي
-
-  src.connect(filter).connect(gain).connect(master);
+  for(let i=0;i<n;i++){ data[i] = (Math.random()*2-1) * (1 - i/n); } // ضوضاء تخفت
+  const src = audioCtx.createBufferSource(); src.buffer = buffer;
+  const lp  = audioCtx.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value = 1200;
+  const g   = audioCtx.createGain(); g.gain.value = 1.2;
+  src.connect(lp).connect(g).connect(master);
   src.start();
 }
 
-// ---------- MediaPipe Hands ----------
+/* ===================== واجهة ===================== */
+function setStatus(msg, isError=false){
+  statusEl.textContent = msg || '';
+  statusEl.className = 'status' + (isError ? ' error' : '');
+}
+btnPiano.addEventListener('click', ()=>{noteMode='piano';btnPiano.classList.add('active');btnDrum.classList.remove('active')});
+btnDrum .addEventListener('click', ()=>{noteMode='drum'; btnDrum .classList.add('active');btnPiano.classList.remove('active')});
+
+/* ===================== MediaPipe Hands ===================== */
 const hands = new Hands({
-  locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+  locateFile: (f)=>`https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}`
 });
 hands.setOptions({
   maxNumHands: 1,
@@ -249,56 +154,90 @@ hands.setOptions({
 });
 hands.onResults(onResults);
 
-// نُشغّل MediaPipe بعد تشغيل الكاميرا بنجاح
-let mpCamera = null;
-async function ensureMP(){
-  if (mpCamera) return;
-  mpCamera = new Camera(video, {
-    onFrame: async () => { await hands.send({ image: video }); },
-    width: canvas.width || 640,
-    height: canvas.height || 480
-  });
-  mpCamera.start();
-}
+/* ===================== تشغيل/إيقاف الكاميرا ===================== */
+async function startCamera(){
+  try{
+    // بعض المتصفحات لا تشغل الصوت إلا بعد تفاعل
+    if (audioCtx.state === 'suspended') await audioCtx.resume();
 
-// سنستدعيها من startCamera بعد تشغيل الكاميرا
-const _oldStartCamera = startCamera;
-startCamera = async function(){
-  await _oldStartCamera();
-  await ensureMP();
-  // على أجهزة iOS/Android قد يتطلب الصوت تفاعلًا:
-  if (audioCtx.state === 'suspended') { audioCtx.resume(); }
-}
+    // MediaPipe Camera تدير getUserMedia داخليًا
+    mpCamera = new Camera(video, {
+      onFrame: async () => { await hands.send({ image: video }); },
+      width:  640,
+      height: 480
+    });
+    await mpCamera.start();
 
-// رسم نقاط اليد + كشف الضربة/النغمة
-let lastTipY = null;
-let lastHitTime = 0;
-const HIT_COOLDOWN = 120; // ملّي ثانية
+    // ضبط قياسات الرسم بعد بدء الفيديو
+    const wait = setInterval(()=>{
+      if (video.videoWidth && video.videoHeight){
+        canvas.width  = video.videoWidth;
+        canvas.height = video.videoHeight;
+        clearInterval(wait);
+      }
+    }, 60);
+
+    btnStart.style.display='none';
+    btnStop.style.display='inline-block';
+    setStatus('الكاميرا تعمل ✅ حرّكي إصبع السبابة للأسفل أمام الكاميرا للعزف.');
+
+  }catch(e){
+    console.error(e);
+    setStatus('تعذّر تشغيل الكاميرا. تأكدي من إذن الكاميرا ومن أن الرابط HTTPS ثم أعيدي المحاولة.', true);
+  }
+}
+function stopCamera(){
+  try{
+    if (mpCamera){ mpCamera.stop(); mpCamera = null; }
+    const tracks = (video.srcObject && video.srcObject.getTracks) ? video.srcObject.getTracks() : [];
+    tracks.forEach(t=>t.stop());
+  }catch{}
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  btnStop.style.display='none';
+  btnStart.style.display='inline-block';
+  setStatus('تم إيقاف الكاميرا.');
+}
+btnStart.addEventListener('click', startCamera, {passive:true});
+btnStop .addEventListener('click', stopCamera , {passive:true});
+
+// أي نقرة على الصفحة تُعيد تفعيل الصوت إن لزم
+['click','touchstart'].forEach(ev=>{
+  document.addEventListener(ev, ()=>{ if(audioCtx.state==='suspended') audioCtx.resume(); }, {passive:true, once:false});
+});
+
+/* ===================== نتائج MediaPipe ===================== */
 function onResults(results){
-  // نرسم الفيديو كمرآة (لدينا drawFrame بالفعل، لكن هنا نعيد الرسم لحظة الحساب)
+  // رسم الفيديو كمرآة
+  if (!canvas.width || !canvas.height){
+    canvas.width  = results.image.width;
+    canvas.height = results.image.height;
+  }
   ctx.save();
   ctx.scale(-1,1);
   ctx.drawImage(results.image, -canvas.width, 0, canvas.width, canvas.height);
   ctx.restore();
 
-  if (!results.multiHandLandmarks || results.multiHandLandmarks.length === 0) return;
+  if (!results.multiHandLandmarks || results.multiHandLandmarks.length===0){
+    lastTipY = null;
+    return;
+  }
+  const lm = results.multiHandLandmarks[0];
 
-  const lm = results.multiHandLandmarks[0]; // يد واحدة
-  // رسم المعالم (اختياري)
-  drawConnectors(ctx, lm, HAND_CONNECTIONS, {color:'#22d3ee', lineWidth: 3});
-  drawLandmarks(ctx, lm, {color:'#38bdf8', lineWidth: 1, radius: 3});
+  // رسم النقاط والوصلات
+  drawConnectors(ctx, lm, HAND_CONNECTIONS, {color:'#22d3ee', lineWidth:3});
+  drawLandmarks (ctx, lm, {color:'#38bdf8', radius:3});
 
   // طرف السبابة (landmark 8)
   const tip = lm[8];
-  const x = (1 - tip.x) * canvas.width;  // 1 - x لأننا قلبنا الصورة
+  const x = (1 - tip.x) * canvas.width;   // مع المرآة
   const y = tip.y * canvas.height;
 
-  // سرعة نزول الأصبع (ضربة)
+  // كشف ضربة (نزول سريع)
   let hit = false;
   if (lastTipY !== null){
     const speed = (y - lastTipY); // موجب = نزول
     const now = performance.now();
-    if (speed > 8 && (now - lastHitTime) > HIT_COOLDOWN){
+    if (speed > SPEED_THRESHOLD && (now - lastHitTime) > HIT_COOLDOWN){
       hit = true;
       lastHitTime = now;
     }
@@ -308,24 +247,22 @@ function onResults(results){
   if (!hit) return;
 
   if (noteMode === 'piano'){
-    // نحدد النغمة حسب موقع x (8 مفاتيح)
-    const idx = Math.floor((x / canvas.width) * 8);
+    const idx = Math.floor((x / canvas.width) * 8); // 8 مفاتيح
     playPiano(idx);
-    // لمسة بصرية سريعة
     highlightKey(idx);
-  } else {
+  }else{
     playDrum();
     flashHit();
   }
 }
 
-// لمسة بصرية على الـ canvas عند العزف
+/* ===================== مؤثر بصري سريع ===================== */
 function highlightKey(idx){
   const keyW = canvas.width / 8;
   ctx.save();
-  ctx.globalAlpha = 0.25;
+  ctx.globalAlpha = 0.22;
   ctx.fillStyle = '#22d3ee';
-  ctx.fillRect(canvas.width - keyW*(idx+1), 0, keyW, canvas.height); // لأننا مرآة
+  ctx.fillRect(canvas.width - keyW*(idx+1), 0, keyW, canvas.height); // من اليمين بسبب المرآة
   ctx.restore();
 }
 function flashHit(){
@@ -335,4 +272,15 @@ function flashHit(){
   ctx.fillRect(0,0,canvas.width,canvas.height);
   ctx.restore();
 }
-</script>
+
+/* ===================== فحوصات سريعة ===================== */
+(function(){
+  if (!('mediaDevices' in navigator) || !('getUserMedia' in navigator.mediaDevices)){
+    setStatus('متصفحك لا يدعم getUserMedia. استخدمي Chrome/Edge مُحدّث.', true);
+  } else if (location.protocol !== 'https:' && location.hostname !== 'localhost'){
+    setStatus('يجب أن يكون الرابط HTTPS لتعمل الكاميرا.', true);
+  }
+})();
+  </script>
+</body>
+</html>
