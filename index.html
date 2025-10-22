@@ -14,7 +14,39 @@
     :root{--bg:#0f172a;--fg:#e2e8f0;--brand:#22d3ee;}
     *{box-sizing:border-box}
     body{
-      margin:0;background:var(--bg);color:var(--fg);
+    <!-- 🪄 الكاميرا -->
+<video id="video" autoplay playsinline style="
+  width: 100%;
+  max-width: 500px;
+  border: 2px solid white;
+  border-radius: 10px;
+  margin-top: 20px;
+"></video>
+
+<script>
+  async function startCamera() {
+    try {
+      const constraints = {
+        video: {
+          facingMode: 'user', // الكاميرا الأمامية
+          width: { ideal: 640 },
+          height: { ideal: 480 }
+        }
+      };
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      document.getElementById('video').srcObject = stream;
+    } catch (error) {
+      console.error('🚨 خطأ في تشغيل الكاميرا:', error);
+      alert('❌ لم يتم تشغيل الكاميرا. تأكدي من منح الصلاحية في إعدادات المتصفح والجهاز.');
+    }
+  }
+
+  if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+    startCamera();
+  } else {
+    alert('⚠️ المتصفح لا يدعم تشغيل الكاميرا.');
+  }
+</script>  margin:0;background:var(--bg);color:var(--fg);
       font-family: system-ui, -apple-system, "Segoe UI", Tajawal, Arial, sans-serif;
       text-align:center
     }
